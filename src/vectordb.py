@@ -91,18 +91,38 @@ class VectorDatabase:
         return len(chunks)
 
     def similarity_search(
-        self,
-        query_embedding: List[float],
-        top_k: int = 5,
+            self,
+            query_embedding: List[float],
+            top_k: int = 5,
+            where: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """
-        Perform vector similarity search.
+        Perform semantic similarity search.
+
+        Parameters
+        ----------
+        query_embedding : List[float]
+            Embedding of the query.
+
+        top_k : int
+            Number of results to retrieve.
+
+        where : dict | None
+            Optional metadata filter.
+            Example:
+                {"document_id": "doc001"}
         """
 
-        return self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-        )
+        query_args = {
+            "query_embeddings": [query_embedding],
+            "n_results": top_k,
+        }
+
+        if where:
+            query_args["where"] = where
+
+        return self.collection.query(**query_args)
+
 
     def count(self) -> int:
         """

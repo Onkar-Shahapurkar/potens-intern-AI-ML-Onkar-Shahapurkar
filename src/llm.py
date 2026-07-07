@@ -1,12 +1,12 @@
 """
 llm.py
 
-Gemini LLM service for RAG question answering.
+Gemini LLM service.
 
 Responsibilities:
-- Call Gemini 2.5 Flash
-- Generate answers using retrieved context
-- Never answer outside the provided context
+- RAG Question Answering
+- Contradiction Analysis
+- Generic Prompt Execution
 """
 
 from __future__ import annotations
@@ -44,13 +44,30 @@ class LLMService:
 
         self.model_name = model_name
 
+    def generate_raw(
+        self,
+        prompt: str,
+    ) -> str:
+        """
+        Execute any prompt against Gemini and
+        return the raw response text.
+        """
+
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+        )
+
+        return response.text.strip()
+
     def generate_answer(
         self,
         question: str,
         context: str,
     ) -> str:
         """
-        Generate an answer using only the supplied context.
+        Generate a grounded answer using only the
+        retrieved document context.
         """
 
         if not context.strip():
@@ -65,17 +82,24 @@ class LLMService:
             context=context,
         )
 
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=prompt,
-        )
+        return self.generate_raw(prompt)
 
-        return response.text.strip()
+    def generate_contradiction_analysis(
+        self,
+        prompt: str,
+    ) -> str:
+        """
+        Execute contradiction analysis prompt.
+
+        Returns raw JSON text from Gemini.
+        """
+
+        return self.generate_raw(prompt)
 
     @property
     def model_info(self) -> str:
         """
-        Return model name.
+        Return the model name.
         """
 
         return self.model_name

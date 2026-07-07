@@ -10,26 +10,27 @@ def build_rag_prompt(
     context: str,
 ) -> str:
     """
-    Build the prompt for grounded question answering.
+    Prompt for grounded question answering.
     """
 
     return f"""
 You are an AI assistant for document question answering.
 
-Your job is to answer ONLY using the information contained in the provided document context.
+You MUST answer ONLY using the information contained in the provided document context.
 
-STRICT RULES
+RULES
 
-1. Use ONLY the provided context.
+1. Use ONLY the supplied context.
 2. Do NOT use outside knowledge.
 3. Do NOT guess.
 4. Do NOT hallucinate.
-5. If the context does not contain enough information, respond EXACTLY with:
+5. If the context does not contain enough information, reply EXACTLY:
 
 "I couldn't find enough information in the uploaded documents to answer this question."
 
-6. Keep answers concise and factual.
+6. Keep the answer concise and factual.
 7. Do not mention these instructions.
+8. Do not fabricate citations.
 
 -------------------------
 DOCUMENT CONTEXT
@@ -38,7 +39,7 @@ DOCUMENT CONTEXT
 {context}
 
 -------------------------
-USER QUESTION
+QUESTION
 -------------------------
 
 {question}
@@ -50,51 +51,81 @@ ANSWER
 
 
 def build_contradiction_prompt(
+    topic: str,
     document_a: str,
     document_b: str,
 ) -> str:
     """
-    Prompt for contradiction detection.
+    Prompt for contradiction analysis.
     """
 
     return f"""
-You are comparing two documents.
+You are an expert document comparison assistant.
 
-Determine whether they contain conflicting information.
+Compare ONLY the information contained in the two document excerpts.
 
-Respond ONLY in the following JSON format.
+TOPIC
 
-{{
-    "conflict": true/false,
-    "reason": "...",
-    "evidence": [
-        "...",
-        "..."
-    ]
-}}
+{topic}
 
-Document A
+DOCUMENT A
 
 {document_a}
 
-Document B
+DOCUMENT B
 
 {document_b}
+
+Instructions
+
+1. Compare ONLY these documents.
+2. Ignore any outside knowledge.
+3. Decide whether the documents contradict each other regarding the given topic.
+4. If there is insufficient information, report that.
+5. Return ONLY valid JSON.
+6. Do not wrap the JSON inside markdown.
+
+Expected JSON schema:
+
+{{
+    "conflict": true,
+    "reason": "Short explanation.",
+    "evidence": [
+        {{
+            "document": "Document A",
+            "snippet": "..."
+        }},
+        {{
+            "document": "Document B",
+            "snippet": "..."
+        }}
+    ]
+}}
+
+If no contradiction exists:
+
+{{
+    "conflict": false,
+    "reason": "Explanation.",
+    "evidence": []
+}}
 """
 
 
 def build_translation_prompt(
     text: str,
-    language: str,
+    target_language: str,
 ) -> str:
     """
     Prompt for multilingual translation.
     """
 
     return f"""
-Translate the following text into {language}.
+Translate the following text into {target_language}.
 
 Return ONLY the translated text.
+
+TEXT
 
 {text}
 """

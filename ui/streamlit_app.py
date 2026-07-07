@@ -1,14 +1,15 @@
 """
 streamlit_app.py
 
-Phase 8:
-RAG Question Answering with Citations
+Phase 9:
+RAG Document Q&A + Contradiction Analysis
 """
 
 import streamlit as st
 
 from src.chunking import DocumentChunker
 from src.citations import CitationFormatter
+from src.contradiction import ContradictionAnalyzer
 from src.indexing import DocumentIndexer
 from src.ingestion import (
     DocumentIngestor,
@@ -25,89 +26,68 @@ st.set_page_config(
 
 st.title("🤖 Document Q&A with Citations")
 
-st.markdown(
-    """
-Upload a document, build the knowledge base,
-and ask questions grounded in the uploaded documents.
-"""
-)
-
-uploaded_file = st.file_uploader(
-    "Upload Document",
+uploaded_files = st.file_uploader(
+    "Upload Documents",
     type=["pdf", "docx", "txt"],
+    accept_multiple_files=True,
 )
 
-if uploaded_file:
+if uploaded_files:
 
     ingestor = DocumentIngestor()
     chunker = DocumentChunker()
     indexer = DocumentIndexer()
     retriever = Retriever()
     llm = LLMService()
+    contradiction = ContradictionAnalyzer(
+        retriever=retriever,
+        llm=llm,
+    )
+
+    indexed_documents = []
 
     try:
 
-        # ==================================================
-        # INGESTION
-        # ==================================================
+        progress = st.progress(0)
 
-        document = ingestor.ingest(
-            file=uploaded_file,
-            filename=uploaded_file.name,
+        for i, uploaded_file in enumerate(uploaded_files):
+
+            document = ingestor.ingest(
+                file=uploaded_file,
+                filename=uploaded_file.name,
+            )
+
+            chunks = chunker.chunk_document(document)
+
+            indexer.index_chunks(chunks)
+
+            indexed_documents.append(
+                {
+                    "id": document.metadata.document_id,
+                    "filename": document.metadata.filename,
+                    "pages": document.metadata.page_count,
+                    "chunks": len(chunks),
+                }
+            )
+
+            progress.progress((i + 1) / len(uploaded_files))
+
+        st.success(
+            f"Indexed {len(indexed_documents)} document(s)."
         )
-
-        st.success("✅ Document ingested successfully.")
-
-        # ==================================================
-        # CHUNKING
-        # ==================================================
-
-        chunks = chunker.chunk_document(document)
-
-        # ==================================================
-        # INDEXING
-        # ==================================================
-
-        with st.spinner(
-            "Generating embeddings and indexing..."
-        ):
-
-            stats = indexer.index_chunks(chunks)
-
-        st.success("Knowledge base created.")
 
         st.divider()
 
-        st.subheader("Knowledge Base")
+        st.subheader("Indexed Documents")
 
-        c1, c2, c3 = st.columns(3)
-
-        c1.metric(
-            "Chunks",
-            stats["indexed_chunks"],
+        st.dataframe(
+            indexed_documents,
+            use_container_width=True,
         )
 
-        c2.metric(
-            "Vectors",
-            stats["total_vectors"],
-        )
-
-        c3.metric(
-            "Pages",
-            document.metadata.page_count,
-        )
-
-        st.write(
-            f"**Embedding Model:** {stats['embedding_model']}"
-        )
-
-        st.write(
-            f"**Collection:** `{stats['collection_name']}`"
-        )
-
-        # ==================================================
+        # =====================================================
         # QUESTION ANSWERING
-        # ==================================================
+        # =====================================================
 
         st.divider()
 
@@ -115,11 +95,11 @@ if uploaded_file:
 
         question = st.text_input(
             "Question",
-            placeholder="Ask something about the uploaded document...",
+            placeholder="Ask something about the uploaded documents...",
         )
 
         top_k = st.slider(
-            "Retrieved Chunks",
+            "Top K Retrieval",
             1,
             10,
             5,
@@ -130,82 +110,137 @@ if uploaded_file:
             type="primary",
         ):
 
-            if not question.strip():
+            retrieval = retriever.retrieve_for_generation(
+                query=question,
+                top_k=top_k,
+            )
+
+            answer = llm.generate_answer(
+                question=question,
+                context=retrieval["context"],
+            )
+
+            citations = CitationFormatter.format_citations(
+                retrieval["chunks"]
+            )
+
+            st.subheader("Answer")
+
+            st.write(answer)
+
+            st.subheader("Sources")
+
+            if citations:
+
+                for citation in citations:
+
+                    with st.expander(
+                        f"{citation['filename']} | Page {citation['page_number']}"
+                    ):
+
+                        st.write(
+                            f"Chunk: `{citation['chunk_id']}`"
+                        )
+
+                        st.info(
+                            citation["snippet"]
+                        )
+
+            else:
 
                 st.warning(
-                    "Please enter a question."
+                    "No citations available."
+                )
+
+        # =====================================================
+        # CONTRADICTION ANALYSIS
+        # =====================================================
+
+        st.divider()
+
+        st.header("⚖️ Document Contradiction Analysis")
+
+        document_map = {
+            f"{doc['filename']} ({doc['id']})": doc["id"]
+            for doc in indexed_documents
+        }
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            document_a = st.selectbox(
+                "Document A",
+                options=list(document_map.keys()),
+            )
+
+        with col2:
+
+            document_b = st.selectbox(
+                "Document B",
+                options=list(document_map.keys()),
+                index=min(
+                    1,
+                    len(document_map) - 1,
+                ),
+            )
+
+        topic = st.text_input(
+            "Comparison Topic",
+            placeholder="Example: Password Policy",
+        )
+
+        if st.button(
+            "Analyze Contradictions"
+        ):
+
+            result = contradiction.analyze(
+                topic=topic,
+                document_a_id=document_map[
+                    document_a
+                ],
+                document_b_id=document_map[
+                    document_b
+                ],
+            )
+
+            st.subheader("Analysis")
+
+            if result["conflict"]:
+
+                st.error(
+                    "⚠️ Contradiction Detected"
                 )
 
             else:
 
-                with st.spinner(
-                    "Searching documents..."
-                ):
-
-                    retrieval = retriever.retrieve_for_generation(
-                        query=question,
-                        top_k=top_k,
-                    )
-
-                context = retrieval["context"]
-                retrieved_chunks = retrieval["chunks"]
-
-                answer = llm.generate_answer(
-                    question=question,
-                    context=context,
+                st.success(
+                    "✅ No Contradiction Detected"
                 )
 
-                citations = CitationFormatter.format_citations(
-                    retrieved_chunks
-                )
+            st.write(
+                f"**Reason:** {result['reason']}"
+            )
 
-                # ==========================================
-                # ANSWER
-                # ==========================================
+            if result["evidence"]:
 
-                st.divider()
+                st.subheader("Evidence")
 
-                st.subheader("Answer")
+                for item in result["evidence"]:
 
-                st.write(answer)
+                    with st.expander(
+                        item.get(
+                            "document",
+                            "Evidence",
+                        )
+                    ):
 
-                # ==========================================
-                # CITATIONS
-                # ==========================================
-
-                st.subheader("Sources")
-
-                if citations:
-
-                    for citation in citations:
-
-                        with st.expander(
-                            f"{citation['filename']} | Page {citation['page_number']}"
-                        ):
-
-                            st.write(
-                                f"**Chunk ID:** `{citation['chunk_id']}`"
+                        st.write(
+                            item.get(
+                                "snippet",
+                                "",
                             )
-
-                            st.info(
-                                citation["snippet"]
-                            )
-
-                else:
-
-                    st.warning(
-                        "No supporting citations available."
-                    )
-
-                # ==========================================
-                # RETRIEVED CONTEXT
-                # ==========================================
-
-                with st.expander(
-                    "Retrieved Context"
-                ):
-
-                    st.text(context)
+                        )
 
     except DocumentIngestionError as e:
 
@@ -219,21 +254,26 @@ st.divider()
 
 st.info(
     """
-### Current Progress
+### Features Implemented
 
-✅ Phase 4 — Document Ingestion
+✅ Document Ingestion
 
-✅ Phase 5 — Chunking
+✅ Document Chunking
 
-✅ Phase 6 — Gemini Embeddings & ChromaDB
+✅ Gemini Embeddings
 
-✅ Phase 7 — Semantic Retrieval
+✅ ChromaDB Indexing
 
-✅ Phase 8 — Question Answering with Citations
+✅ Semantic Retrieval
+
+✅ Question Answering with Citations
+
+✅ Document Contradiction Analysis
 
 Next:
-- 🔜 /contradict endpoint
-- 🔜 Multilingual support
-- 🔜 Confidence scoring
+- 🌍 Multilingual Query Support
+- 📊 Confidence Score
+- 🔁 Reranker
+- 📈 Evaluation Pipeline
 """
 )

@@ -6,8 +6,9 @@ Semantic retrieval service.
 Responsibilities:
 - Generate query embeddings
 - Search ChromaDB
-- Format retrieval results
-- Build context for LLM generation
+- Retrieve from all documents
+- Retrieve from a specific document
+- Build LLM context
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from src.vectordb import VectorDatabase
 
 class Retriever:
     """
-    Retrieves relevant document chunks.
+    Semantic retriever for RAG.
     """
 
     def __init__(
@@ -47,20 +48,32 @@ class Retriever:
         top_k: int = 5,
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve top-k relevant chunks.
+        Retrieve relevant chunks from all documents.
         """
 
-        if not query.strip():
-            return []
-
-        query_embedding = self.embedding_service.embed_text(query)
-
-        results = self.vector_database.similarity_search(
-            query_embedding=query_embedding,
+        return self._search(
+            query=query,
             top_k=top_k,
+            where=None,
         )
 
-        return self._format_results(results)
+    def retrieve_from_document(
+        self,
+        query: str,
+        document_id: str,
+        top_k: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve relevant chunks from one document only.
+        """
+
+        return self._search(
+            query=query,
+            top_k=top_k,
+            where={
+                "document_id": document_id
+            },
+        )
 
     def retrieve_context(
         self,
@@ -68,11 +81,29 @@ class Retriever:
         top_k: int = 5,
     ) -> str:
         """
-        Build a context string for the LLM.
+        Build context from all documents.
         """
 
         chunks = self.retrieve(
             query=query,
+            top_k=top_k,
+        )
+
+        return self._build_context(chunks)
+
+    def retrieve_document_context(
+        self,
+        query: str,
+        document_id: str,
+        top_k: int = 5,
+    ) -> str:
+        """
+        Build context from a single document.
+        """
+
+        chunks = self.retrieve_from_document(
+            query=query,
+            document_id=document_id,
             top_k=top_k,
         )
 
@@ -84,13 +115,7 @@ class Retriever:
         top_k: int = 5,
     ) -> Dict[str, Any]:
         """
-        Retrieve everything needed for answer generation.
-
-        Returns:
-            {
-                "context": "...",
-                "chunks": [...]
-            }
+        Retrieve everything required for answer generation.
         """
 
         chunks = self.retrieve(
@@ -103,12 +128,35 @@ class Retriever:
             "chunks": chunks,
         }
 
+    def _search(
+        self,
+        query: str,
+        top_k: int,
+        where: Dict[str, Any] | None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Internal semantic search.
+        """
+
+        if not query.strip():
+            return []
+
+        query_embedding = self.embedding_service.embed_text(query)
+
+        results = self.vector_database.similarity_search(
+            query_embedding=query_embedding,
+            top_k=top_k,
+            where=where,
+        )
+
+        return self._format_results(results)
+
     def _build_context(
         self,
         chunks: List[Dict[str, Any]],
     ) -> str:
         """
-        Convert retrieved chunks into LLM context.
+        Convert chunks into LLM context.
         """
 
         if not chunks:
@@ -132,7 +180,7 @@ class Retriever:
         results: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """
-        Convert ChromaDB response into a clean structure.
+        Convert ChromaDB response into structured results.
         """
 
         formatted = []
