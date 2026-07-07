@@ -4,11 +4,9 @@ retrieval.py
 Semantic retrieval service.
 
 Responsibilities:
-- Generate query embeddings
-- Search ChromaDB
-- Retrieve from all documents
-- Retrieve from a specific document
-- Build LLM context
+- Multilingual semantic retrieval
+- Document-specific retrieval
+- Context generation for LLM
 """
 
 from __future__ import annotations
@@ -16,18 +14,20 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from src.embeddings import EmbeddingService
+from src.translation import TranslationService
 from src.vectordb import VectorDatabase
 
 
 class Retriever:
     """
-    Semantic retriever for RAG.
+    Semantic retriever for the RAG pipeline.
     """
 
     def __init__(
         self,
         embedding_service: EmbeddingService | None = None,
         vector_database: VectorDatabase | None = None,
+        translator: TranslationService | None = None,
     ):
 
         self.embedding_service = (
@@ -42,17 +42,27 @@ class Retriever:
             else VectorDatabase()
         )
 
+        self.translator = (
+            translator
+            if translator
+            else TranslationService()
+        )
+
     def retrieve(
         self,
         query: str,
         top_k: int = 5,
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve relevant chunks from all documents.
+        Retrieve relevant chunks from all indexed documents.
         """
 
+        _, english_query = (
+            self.translator.translate_round_trip(query)
+        )
+
         return self._search(
-            query=query,
+            query=english_query,
             top_k=top_k,
             where=None,
         )
@@ -64,14 +74,18 @@ class Retriever:
         top_k: int = 5,
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve relevant chunks from one document only.
+        Retrieve relevant chunks from one document.
         """
 
+        _, english_query = (
+            self.translator.translate_round_trip(query)
+        )
+
         return self._search(
-            query=query,
+            query=english_query,
             top_k=top_k,
             where={
-                "document_id": document_id
+                "document_id": document_id,
             },
         )
 
@@ -81,7 +95,7 @@ class Retriever:
         top_k: int = 5,
     ) -> str:
         """
-        Build context from all documents.
+        Build context from all retrieved chunks.
         """
 
         chunks = self.retrieve(
@@ -98,7 +112,7 @@ class Retriever:
         top_k: int = 5,
     ) -> str:
         """
-        Build context from a single document.
+        Build context from one document.
         """
 
         chunks = self.retrieve_from_document(
@@ -115,15 +129,22 @@ class Retriever:
         top_k: int = 5,
     ) -> Dict[str, Any]:
         """
-        Retrieve everything required for answer generation.
+        Retrieve everything needed for answer generation.
         """
 
-        chunks = self.retrieve(
-            query=query,
+        language, english_query = (
+            self.translator.translate_round_trip(query)
+        )
+
+        chunks = self._search(
+            query=english_query,
             top_k=top_k,
+            where=None,
         )
 
         return {
+            "language": language,
+            "translated_query": english_query,
             "context": self._build_context(chunks),
             "chunks": chunks,
         }
@@ -141,7 +162,9 @@ class Retriever:
         if not query.strip():
             return []
 
-        query_embedding = self.embedding_service.embed_text(query)
+        query_embedding = self.embedding_service.embed_text(
+            query
+        )
 
         results = self.vector_database.similarity_search(
             query_embedding=query_embedding,
@@ -156,7 +179,7 @@ class Retriever:
         chunks: List[Dict[str, Any]],
     ) -> str:
         """
-        Convert chunks into LLM context.
+        Convert retrieved chunks into LLM context.
         """
 
         if not chunks:
@@ -167,10 +190,14 @@ class Retriever:
         for chunk in chunks:
 
             context.append(
-                f"[Source: {chunk['filename']} | "
-                f"Page {chunk['page_number']} | "
-                f"Chunk: {chunk['chunk_id']}]\n"
-                f"{chunk['text']}"
+                "\n".join(
+                    [
+                        f"[Source: {chunk['filename']}]",
+                        f"[Page: {chunk['page_number']}]",
+                        f"[Chunk ID: {chunk['chunk_id']}]",
+                        chunk["text"],
+                    ]
+                )
             )
 
         return "\n\n".join(context)
@@ -180,10 +207,10 @@ class Retriever:
         results: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """
-        Convert ChromaDB response into structured results.
+        Convert ChromaDB response into structured dictionaries.
         """
 
-        formatted = []
+        formatted: List[Dict[str, Any]] = []
 
         ids = results.get("ids", [[]])[0]
         documents = results.get("documents", [[]])[0]
@@ -207,7 +234,7 @@ class Retriever:
                     "start_char": metadata.get("start_char"),
                     "end_char": metadata.get("end_char"),
                     "text": document,
-                    "distance": distance,
+                    "distance": float(distance),
                 }
             )
 

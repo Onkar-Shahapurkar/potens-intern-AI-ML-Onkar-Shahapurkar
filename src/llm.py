@@ -6,6 +6,7 @@ Gemini LLM service.
 Responsibilities:
 - RAG Question Answering
 - Contradiction Analysis
+- Multilingual Answer Generation
 - Generic Prompt Execution
 """
 
@@ -17,6 +18,7 @@ from dotenv import load_dotenv
 from google import genai
 
 from src.prompts import build_rag_prompt
+from src.translation import TranslationService
 
 load_dotenv()
 
@@ -29,6 +31,7 @@ class LLMService:
     def __init__(
         self,
         model_name: str = "gemini-2.5-flash",
+        translator: TranslationService | None = None,
     ):
 
         api_key = os.getenv("GEMINI_API_KEY")
@@ -44,13 +47,20 @@ class LLMService:
 
         self.model_name = model_name
 
+        self.translator = (
+            translator
+            if translator
+            else TranslationService(
+                model_name=model_name
+            )
+        )
+
     def generate_raw(
         self,
         prompt: str,
     ) -> str:
         """
-        Execute any prompt against Gemini and
-        return the raw response text.
+        Execute any prompt against Gemini.
         """
 
         response = self.client.models.generate_content(
@@ -66,8 +76,13 @@ class LLMService:
         context: str,
     ) -> str:
         """
-        Generate a grounded answer using only the
-        retrieved document context.
+        Generate a grounded answer.
+
+        Workflow:
+        1. Detect query language.
+        2. Translate to English (if needed).
+        3. Generate answer from retrieved context.
+        4. Translate answer back to original language.
         """
 
         if not context.strip():
@@ -77,12 +92,29 @@ class LLMService:
                 "uploaded documents to answer this question."
             )
 
+        language, english_question = (
+            self.translator.translate_round_trip(
+                question
+            )
+        )
+
         prompt = build_rag_prompt(
-            question=question,
+            question=english_question,
             context=context,
         )
 
-        return self.generate_raw(prompt)
+        english_answer = self.generate_raw(
+            prompt
+        )
+
+        if language == "en":
+
+            return english_answer
+
+        return self.translator.translate_from_english(
+            english_answer,
+            language,
+        )
 
     def generate_contradiction_analysis(
         self,
@@ -90,16 +122,29 @@ class LLMService:
     ) -> str:
         """
         Execute contradiction analysis prompt.
-
-        Returns raw JSON text from Gemini.
+        Returns raw JSON string.
         """
 
         return self.generate_raw(prompt)
 
+    def generate_translation(
+        self,
+        text: str,
+        target_language: str,
+    ) -> str:
+        """
+        Translate text into the target language.
+        """
+
+        return self.translator.translate_from_english(
+            text=text,
+            target_language=target_language,
+        )
+
     @property
     def model_info(self) -> str:
         """
-        Return the model name.
+        Return model name.
         """
 
         return self.model_name

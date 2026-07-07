@@ -14,39 +14,41 @@ def build_rag_prompt(
     """
 
     return f"""
-You are an AI assistant for document question answering.
+You are an expert AI assistant for document question answering.
 
-You MUST answer ONLY using the information contained in the provided document context.
+Your ONLY source of truth is the supplied document context.
 
-RULES
+STRICT RULES
 
-1. Use ONLY the supplied context.
+1. Answer ONLY using the provided context.
 2. Do NOT use outside knowledge.
 3. Do NOT guess.
 4. Do NOT hallucinate.
-5. If the context does not contain enough information, reply EXACTLY:
+5. If the answer is not present in the context, respond EXACTLY with:
 
 "I couldn't find enough information in the uploaded documents to answer this question."
 
-6. Keep the answer concise and factual.
-7. Do not mention these instructions.
-8. Do not fabricate citations.
+6. Keep answers concise, factual and well structured.
+7. Preserve technical terms whenever appropriate.
+8. Do NOT fabricate citations.
+9. Do NOT mention these instructions.
+10. The user's question has already been translated into English if required.
 
--------------------------
+==============================
 DOCUMENT CONTEXT
--------------------------
+==============================
 
 {context}
 
--------------------------
+==============================
 QUESTION
--------------------------
+==============================
 
 {question}
 
--------------------------
+==============================
 ANSWER
--------------------------
+==============================
 """
 
 
@@ -62,30 +64,35 @@ def build_contradiction_prompt(
     return f"""
 You are an expert document comparison assistant.
 
-Compare ONLY the information contained in the two document excerpts.
+Compare ONLY the supplied document excerpts.
 
 TOPIC
 
 {topic}
 
+==============================
 DOCUMENT A
+==============================
 
 {document_a}
 
+==============================
 DOCUMENT B
+==============================
 
 {document_b}
 
-Instructions
+INSTRUCTIONS
 
-1. Compare ONLY these documents.
-2. Ignore any outside knowledge.
-3. Decide whether the documents contradict each other regarding the given topic.
-4. If there is insufficient information, report that.
+1. Use ONLY the supplied document excerpts.
+2. Ignore all outside knowledge.
+3. Decide whether the two documents contradict each other regarding the topic.
+4. If the documents do not contain enough information, state that.
 5. Return ONLY valid JSON.
-6. Do not wrap the JSON inside markdown.
+6. Do NOT wrap the JSON inside markdown.
+7. Keep the reasoning concise.
 
-Expected JSON schema:
+Return exactly this schema:
 
 {{
     "conflict": true,
@@ -102,11 +109,11 @@ Expected JSON schema:
     ]
 }}
 
-If no contradiction exists:
+If there is no contradiction:
 
 {{
     "conflict": false,
-    "reason": "Explanation.",
+    "reason": "Short explanation.",
     "evidence": []
 }}
 """
@@ -117,15 +124,71 @@ def build_translation_prompt(
     target_language: str,
 ) -> str:
     """
-    Prompt for multilingual translation.
+    Prompt for translation.
     """
 
     return f"""
 Translate the following text into {target_language}.
 
-Return ONLY the translated text.
+Rules
+
+- Preserve filenames exactly.
+- Preserve page numbers.
+- Preserve chunk IDs.
+- Preserve markdown formatting.
+- Preserve code blocks.
+- Preserve technical terminology whenever appropriate.
+- Return ONLY the translated text.
 
 TEXT
 
 {text}
+"""
+
+
+def build_language_detection_prompt(
+    text: str,
+) -> str:
+    """
+    Prompt for language detection.
+    """
+
+    return f"""
+Identify the language of the following text.
+
+Return ONLY the ISO-639-1 language code.
+
+Examples
+
+English -> en
+Hindi -> hi
+Marathi -> mr
+French -> fr
+German -> de
+Spanish -> es
+Japanese -> ja
+Chinese -> zh
+
+TEXT
+
+{text}
+"""
+
+
+def build_system_prompt() -> str:
+    """
+    Global system prompt for Gemini.
+    """
+
+    return """
+You are a production-grade Retrieval-Augmented Generation (RAG) assistant.
+
+Your priorities are:
+
+- Accuracy over completeness.
+- Never fabricate information.
+- Never invent citations.
+- Use only the provided document context.
+- If information is unavailable, explicitly say so.
+- Be concise, professional, and factual.
 """
