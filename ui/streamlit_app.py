@@ -1,29 +1,30 @@
 """
 streamlit_app.py
 
-Phase 5:
-Document Ingestion + Chunking
+Phase 6:
+Document Ingestion + Chunking + Vector Indexing
 """
 
 import streamlit as st
 
+from src.chunking import DocumentChunker
+from src.indexing import DocumentIndexer
 from src.ingestion import (
     DocumentIngestor,
     DocumentIngestionError,
 )
-from src.chunking import DocumentChunker
 
 st.set_page_config(
     page_title="POTENS AI/ML Assignment",
-    page_icon="📄",
+    page_icon="🤖",
     layout="wide",
 )
 
-st.title("📄 RAG Document Processing")
+st.title("🤖 RAG Document Indexing")
 
 st.markdown(
     """
-Upload a document to test the ingestion and chunking pipeline.
+Upload one or more documents to build your knowledge base.
 
 ### Supported Formats
 - PDF
@@ -37,75 +38,113 @@ uploaded_file = st.file_uploader(
     type=["pdf", "docx", "txt"],
 )
 
-if uploaded_file is not None:
+if uploaded_file:
 
     ingestor = DocumentIngestor()
     chunker = DocumentChunker()
+    indexer = DocumentIndexer()
 
     try:
 
-        # -----------------------------
-        # Document Ingestion
-        # -----------------------------
+        # ---------------------------------------------------
+        # STEP 1 : INGEST
+        # ---------------------------------------------------
+
         document = ingestor.ingest(
             file=uploaded_file,
             filename=uploaded_file.name,
         )
 
-        st.success("Document ingested successfully!")
+        st.success("✅ Document ingested successfully.")
 
         metadata = document.metadata
 
-        st.header("📑 Document Metadata")
+        st.subheader("📄 Document Metadata")
 
-        col1, col2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
 
-        with col1:
-            st.metric("Pages", metadata.page_count)
-            st.metric("Words", metadata.word_count)
-            st.metric("Characters", metadata.character_count)
+        c1.metric("Pages", metadata.page_count)
+        c2.metric("Words", metadata.word_count)
+        c3.metric("Characters", metadata.character_count)
 
-        with col2:
-            st.write(f"**Filename:** {metadata.filename}")
-            st.write(f"**Document ID:** {metadata.document_id}")
-            st.write(f"**Language:** {metadata.language}")
+        st.write(f"**Filename:** {metadata.filename}")
+        st.write(f"**Document ID:** `{metadata.document_id}`")
+        st.write(f"**Language:** {metadata.language}")
 
-        # -----------------------------
-        # Page Preview
-        # -----------------------------
-        st.divider()
-
-        st.header("📄 Extracted Pages")
-
-        for page in document.pages:
-
-            with st.expander(f"Page {page.page_number}"):
-
-                st.text(page.text)
-
-        # -----------------------------
-        # Chunk Generation
-        # -----------------------------
-        st.divider()
+        # ---------------------------------------------------
+        # STEP 2 : CHUNKING
+        # ---------------------------------------------------
 
         chunks = chunker.chunk_document(document)
 
-        st.header("🧩 Generated Chunks")
+        st.divider()
 
-        st.metric("Total Chunks", len(chunks))
+        st.subheader("🧩 Chunk Generation")
 
-        for chunk in chunks:
+        st.metric("Generated Chunks", len(chunks))
 
-            with st.expander(f"Chunk {chunk.chunk_index}"):
+        with st.expander("Preview Generated Chunks"):
 
-                st.write(f"**Chunk ID:** `{chunk.chunk_id}`")
-                st.write(f"**Page:** {chunk.page_number}")
+            for chunk in chunks:
+
+                st.markdown(
+                    f"### Chunk {chunk.chunk_index}"
+                )
+
+                st.write(
+                    f"**Page:** {chunk.page_number}"
+                )
+
                 st.write(
                     f"**Characters:** "
                     f"{chunk.start_char} → {chunk.end_char}"
                 )
 
                 st.code(chunk.text)
+
+        # ---------------------------------------------------
+        # STEP 3 : VECTOR INDEXING
+        # ---------------------------------------------------
+
+        with st.spinner(
+            "Generating Gemini embeddings and indexing..."
+        ):
+
+            stats = indexer.index_chunks(chunks)
+
+        st.divider()
+
+        st.subheader("📚 Vector Database")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            st.metric(
+                "Indexed Chunks",
+                stats["indexed_chunks"],
+            )
+
+            st.metric(
+                "Total Indexed Vectors",
+                stats["total_vectors"],
+            )
+
+        with col2:
+
+            st.write(
+                f"**Embedding Model:** "
+                f"{stats['embedding_model']}"
+            )
+
+            st.write(
+                f"**Collection:** "
+                f"`{stats['collection_name']}`"
+            )
+
+        st.success(
+            "Knowledge base successfully created!"
+        )
 
     except DocumentIngestionError as e:
 
@@ -117,6 +156,21 @@ if uploaded_file is not None:
 
 st.divider()
 
-st.caption(
-    "Phase 5 • Document Ingestion + Chunking • POTENS Internship 2026"
+st.info(
+    """
+Current Phase: **Phase 6**
+
+Completed:
+
+- ✅ Document Ingestion
+- ✅ Chunk Generation
+- ✅ Gemini Embeddings
+- ✅ ChromaDB Indexing
+
+Next:
+
+- 🔜 Question Answering (/ask)
+- 🔜 Citations
+- 🔜 Hallucination Guard
+"""
 )
