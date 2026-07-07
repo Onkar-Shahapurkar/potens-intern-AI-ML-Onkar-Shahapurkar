@@ -6,7 +6,8 @@ Semantic retrieval service.
 Responsibilities:
 - Generate query embeddings
 - Search ChromaDB
-- Convert search results into structured objects
+- Format retrieval results
+- Build context for LLM generation
 """
 
 from __future__ import annotations
@@ -19,8 +20,7 @@ from src.vectordb import VectorDatabase
 
 class Retriever:
     """
-    Retrieves the most relevant document chunks
-    from the vector database.
+    Retrieves relevant document chunks.
     """
 
     def __init__(
@@ -47,7 +47,7 @@ class Retriever:
         top_k: int = 5,
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve the top-k most relevant chunks.
+        Retrieve top-k relevant chunks.
         """
 
         if not query.strip():
@@ -62,15 +62,80 @@ class Retriever:
 
         return self._format_results(results)
 
+    def retrieve_context(
+        self,
+        query: str,
+        top_k: int = 5,
+    ) -> str:
+        """
+        Build a context string for the LLM.
+        """
+
+        chunks = self.retrieve(
+            query=query,
+            top_k=top_k,
+        )
+
+        return self._build_context(chunks)
+
+    def retrieve_for_generation(
+        self,
+        query: str,
+        top_k: int = 5,
+    ) -> Dict[str, Any]:
+        """
+        Retrieve everything needed for answer generation.
+
+        Returns:
+            {
+                "context": "...",
+                "chunks": [...]
+            }
+        """
+
+        chunks = self.retrieve(
+            query=query,
+            top_k=top_k,
+        )
+
+        return {
+            "context": self._build_context(chunks),
+            "chunks": chunks,
+        }
+
+    def _build_context(
+        self,
+        chunks: List[Dict[str, Any]],
+    ) -> str:
+        """
+        Convert retrieved chunks into LLM context.
+        """
+
+        if not chunks:
+            return ""
+
+        context = []
+
+        for chunk in chunks:
+
+            context.append(
+                f"[Source: {chunk['filename']} | "
+                f"Page {chunk['page_number']} | "
+                f"Chunk: {chunk['chunk_id']}]\n"
+                f"{chunk['text']}"
+            )
+
+        return "\n\n".join(context)
+
     def _format_results(
         self,
         results: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """
-        Convert ChromaDB response into a cleaner format.
+        Convert ChromaDB response into a clean structure.
         """
 
-        formatted_results: List[Dict[str, Any]] = []
+        formatted = []
 
         ids = results.get("ids", [[]])[0]
         documents = results.get("documents", [[]])[0]
@@ -84,7 +149,7 @@ class Retriever:
             distances,
         ):
 
-            formatted_results.append(
+            formatted.append(
                 {
                     "chunk_id": chunk_id,
                     "document_id": metadata.get("document_id"),
@@ -98,34 +163,4 @@ class Retriever:
                 }
             )
 
-        return formatted_results
-
-    def retrieve_context(
-        self,
-        query: str,
-        top_k: int = 5,
-    ) -> str:
-        """
-        Retrieve the top-k chunks and combine them
-        into a single context string.
-        """
-
-        retrieved_chunks = self.retrieve(
-            query=query,
-            top_k=top_k,
-        )
-
-        if not retrieved_chunks:
-            return ""
-
-        context = []
-
-        for chunk in retrieved_chunks:
-
-            context.append(
-                f"[Source: {chunk['filename']} | "
-                f"Page {chunk['page_number']}]\n"
-                f"{chunk['text']}"
-            )
-
-        return "\n\n".join(context)
+        return formatted

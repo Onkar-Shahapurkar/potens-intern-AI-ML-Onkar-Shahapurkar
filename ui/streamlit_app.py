@@ -1,18 +1,20 @@
 """
 streamlit_app.py
 
-Phase 7:
-Document Ingestion + Chunking + Indexing + Semantic Retrieval
+Phase 8:
+RAG Question Answering with Citations
 """
 
 import streamlit as st
 
 from src.chunking import DocumentChunker
+from src.citations import CitationFormatter
 from src.indexing import DocumentIndexer
 from src.ingestion import (
     DocumentIngestor,
     DocumentIngestionError,
 )
+from src.llm import LLMService
 from src.retrieval import Retriever
 
 st.set_page_config(
@@ -21,12 +23,12 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("🤖 RAG Document Retrieval System")
+st.title("🤖 Document Q&A with Citations")
 
 st.markdown(
     """
-Upload a document, index it into the vector database,
-and search it using semantic retrieval.
+Upload a document, build the knowledge base,
+and ask questions grounded in the uploaded documents.
 """
 )
 
@@ -41,11 +43,12 @@ if uploaded_file:
     chunker = DocumentChunker()
     indexer = DocumentIndexer()
     retriever = Retriever()
+    llm = LLMService()
 
     try:
 
         # ==================================================
-        # STEP 1 : INGESTION
+        # INGESTION
         # ==================================================
 
         document = ingestor.ingest(
@@ -55,165 +58,154 @@ if uploaded_file:
 
         st.success("✅ Document ingested successfully.")
 
-        metadata = document.metadata
-
-        st.subheader("📄 Document Information")
-
-        c1, c2, c3 = st.columns(3)
-
-        c1.metric("Pages", metadata.page_count)
-        c2.metric("Words", metadata.word_count)
-        c3.metric("Characters", metadata.character_count)
-
-        st.write(f"**Filename:** {metadata.filename}")
-        st.write(f"**Document ID:** `{metadata.document_id}`")
-        st.write(f"**Language:** {metadata.language}")
-
         # ==================================================
-        # STEP 2 : CHUNKING
+        # CHUNKING
         # ==================================================
 
         chunks = chunker.chunk_document(document)
 
-        st.divider()
-
-        st.subheader("🧩 Chunking")
-
-        st.metric("Generated Chunks", len(chunks))
-
-        with st.expander("Preview Chunks"):
-
-            for chunk in chunks:
-
-                st.markdown(f"### Chunk {chunk.chunk_index}")
-
-                st.write(f"**Page:** {chunk.page_number}")
-
-                st.code(chunk.text)
-
         # ==================================================
-        # STEP 3 : INDEXING
+        # INDEXING
         # ==================================================
 
         with st.spinner(
-            "Generating Gemini embeddings and indexing..."
+            "Generating embeddings and indexing..."
         ):
 
             stats = indexer.index_chunks(chunks)
 
-        st.divider()
-
-        st.subheader("📚 Vector Database")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-
-            st.metric(
-                "Indexed Chunks",
-                stats["indexed_chunks"],
-            )
-
-            st.metric(
-                "Total Vectors",
-                stats["total_vectors"],
-            )
-
-        with col2:
-
-            st.write(
-                f"**Embedding Model:** "
-                f"{stats['embedding_model']}"
-            )
-
-            st.write(
-                f"**Collection:** "
-                f"`{stats['collection_name']}`"
-            )
-
-        st.success("Knowledge base created successfully!")
-
-        # ==================================================
-        # STEP 4 : RETRIEVAL
-        # ==================================================
+        st.success("Knowledge base created.")
 
         st.divider()
 
-        st.subheader("🔍 Semantic Search")
+        st.subheader("Knowledge Base")
 
-        query = st.text_input(
-            "Ask a retrieval query",
-            placeholder="Example: What is Retrieval-Augmented Generation?",
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric(
+            "Chunks",
+            stats["indexed_chunks"],
+        )
+
+        c2.metric(
+            "Vectors",
+            stats["total_vectors"],
+        )
+
+        c3.metric(
+            "Pages",
+            document.metadata.page_count,
+        )
+
+        st.write(
+            f"**Embedding Model:** {stats['embedding_model']}"
+        )
+
+        st.write(
+            f"**Collection:** `{stats['collection_name']}`"
+        )
+
+        # ==================================================
+        # QUESTION ANSWERING
+        # ==================================================
+
+        st.divider()
+
+        st.header("💬 Ask Questions")
+
+        question = st.text_input(
+            "Question",
+            placeholder="Ask something about the uploaded document...",
         )
 
         top_k = st.slider(
-            "Top K Results",
-            min_value=1,
-            max_value=10,
-            value=5,
+            "Retrieved Chunks",
+            1,
+            10,
+            5,
         )
 
-        if st.button("Search"):
+        if st.button(
+            "Generate Answer",
+            type="primary",
+        ):
 
-            with st.spinner("Searching..."):
+            if not question.strip():
 
-                results = retriever.retrieve(
-                    query=query,
-                    top_k=top_k,
+                st.warning(
+                    "Please enter a question."
                 )
-
-            if not results:
-
-                st.warning("No relevant chunks found.")
 
             else:
 
-                st.success(
-                    f"Retrieved {len(results)} chunk(s)."
+                with st.spinner(
+                    "Searching documents..."
+                ):
+
+                    retrieval = retriever.retrieve_for_generation(
+                        query=question,
+                        top_k=top_k,
+                    )
+
+                context = retrieval["context"]
+                retrieved_chunks = retrieval["chunks"]
+
+                answer = llm.generate_answer(
+                    question=question,
+                    context=context,
                 )
 
-                for i, result in enumerate(results, start=1):
+                citations = CitationFormatter.format_citations(
+                    retrieved_chunks
+                )
 
-                    with st.expander(f"Result {i}"):
-
-                        st.write(
-                            f"**Chunk ID:** `{result['chunk_id']}`"
-                        )
-
-                        st.write(
-                            f"**Filename:** {result['filename']}"
-                        )
-
-                        st.write(
-                            f"**Page:** {result['page_number']}"
-                        )
-
-                        st.write(
-                            f"**Distance:** {result['distance']:.4f}"
-                        )
-
-                        st.write(
-                            f"**Character Range:** "
-                            f"{result['start_char']} → "
-                            f"{result['end_char']}"
-                        )
-
-                        st.code(result["text"])
+                # ==========================================
+                # ANSWER
+                # ==========================================
 
                 st.divider()
 
-                st.subheader("📄 Combined Retrieval Context")
+                st.subheader("Answer")
 
-                context = retriever.retrieve_context(
-                    query=query,
-                    top_k=top_k,
-                )
+                st.write(answer)
 
-                st.text_area(
-                    "Context",
-                    value=context,
-                    height=300,
-                )
+                # ==========================================
+                # CITATIONS
+                # ==========================================
+
+                st.subheader("Sources")
+
+                if citations:
+
+                    for citation in citations:
+
+                        with st.expander(
+                            f"{citation['filename']} | Page {citation['page_number']}"
+                        ):
+
+                            st.write(
+                                f"**Chunk ID:** `{citation['chunk_id']}`"
+                            )
+
+                            st.info(
+                                citation["snippet"]
+                            )
+
+                else:
+
+                    st.warning(
+                        "No supporting citations available."
+                    )
+
+                # ==========================================
+                # RETRIEVED CONTEXT
+                # ==========================================
+
+                with st.expander(
+                    "Retrieved Context"
+                ):
+
+                    st.text(context)
 
     except DocumentIngestionError as e:
 
@@ -231,13 +223,17 @@ st.info(
 
 ✅ Phase 4 — Document Ingestion
 
-✅ Phase 5 — Document Chunking
+✅ Phase 5 — Chunking
 
 ✅ Phase 6 — Gemini Embeddings & ChromaDB
 
 ✅ Phase 7 — Semantic Retrieval
 
-🔜 Next Phase:
-LLM-powered Question Answering with Citations (`/ask`)
+✅ Phase 8 — Question Answering with Citations
+
+Next:
+- 🔜 /contradict endpoint
+- 🔜 Multilingual support
+- 🔜 Confidence scoring
 """
 )
