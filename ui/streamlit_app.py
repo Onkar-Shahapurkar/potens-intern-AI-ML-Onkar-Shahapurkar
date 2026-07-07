@@ -1,8 +1,8 @@
 """
 streamlit_app.py
 
-Phase 6:
-Document Ingestion + Chunking + Vector Indexing
+Phase 7:
+Document Ingestion + Chunking + Indexing + Semantic Retrieval
 """
 
 import streamlit as st
@@ -13,6 +13,7 @@ from src.ingestion import (
     DocumentIngestor,
     DocumentIngestionError,
 )
+from src.retrieval import Retriever
 
 st.set_page_config(
     page_title="POTENS AI/ML Assignment",
@@ -20,16 +21,12 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("🤖 RAG Document Indexing")
+st.title("🤖 RAG Document Retrieval System")
 
 st.markdown(
     """
-Upload one or more documents to build your knowledge base.
-
-### Supported Formats
-- PDF
-- DOCX
-- TXT
+Upload a document, index it into the vector database,
+and search it using semantic retrieval.
 """
 )
 
@@ -43,12 +40,13 @@ if uploaded_file:
     ingestor = DocumentIngestor()
     chunker = DocumentChunker()
     indexer = DocumentIndexer()
+    retriever = Retriever()
 
     try:
 
-        # ---------------------------------------------------
-        # STEP 1 : INGEST
-        # ---------------------------------------------------
+        # ==================================================
+        # STEP 1 : INGESTION
+        # ==================================================
 
         document = ingestor.ingest(
             file=uploaded_file,
@@ -59,7 +57,7 @@ if uploaded_file:
 
         metadata = document.metadata
 
-        st.subheader("📄 Document Metadata")
+        st.subheader("📄 Document Information")
 
         c1, c2, c3 = st.columns(3)
 
@@ -71,40 +69,31 @@ if uploaded_file:
         st.write(f"**Document ID:** `{metadata.document_id}`")
         st.write(f"**Language:** {metadata.language}")
 
-        # ---------------------------------------------------
+        # ==================================================
         # STEP 2 : CHUNKING
-        # ---------------------------------------------------
+        # ==================================================
 
         chunks = chunker.chunk_document(document)
 
         st.divider()
 
-        st.subheader("🧩 Chunk Generation")
+        st.subheader("🧩 Chunking")
 
         st.metric("Generated Chunks", len(chunks))
 
-        with st.expander("Preview Generated Chunks"):
+        with st.expander("Preview Chunks"):
 
             for chunk in chunks:
 
-                st.markdown(
-                    f"### Chunk {chunk.chunk_index}"
-                )
+                st.markdown(f"### Chunk {chunk.chunk_index}")
 
-                st.write(
-                    f"**Page:** {chunk.page_number}"
-                )
-
-                st.write(
-                    f"**Characters:** "
-                    f"{chunk.start_char} → {chunk.end_char}"
-                )
+                st.write(f"**Page:** {chunk.page_number}")
 
                 st.code(chunk.text)
 
-        # ---------------------------------------------------
-        # STEP 3 : VECTOR INDEXING
-        # ---------------------------------------------------
+        # ==================================================
+        # STEP 3 : INDEXING
+        # ==================================================
 
         with st.spinner(
             "Generating Gemini embeddings and indexing..."
@@ -126,7 +115,7 @@ if uploaded_file:
             )
 
             st.metric(
-                "Total Indexed Vectors",
+                "Total Vectors",
                 stats["total_vectors"],
             )
 
@@ -142,9 +131,89 @@ if uploaded_file:
                 f"`{stats['collection_name']}`"
             )
 
-        st.success(
-            "Knowledge base successfully created!"
+        st.success("Knowledge base created successfully!")
+
+        # ==================================================
+        # STEP 4 : RETRIEVAL
+        # ==================================================
+
+        st.divider()
+
+        st.subheader("🔍 Semantic Search")
+
+        query = st.text_input(
+            "Ask a retrieval query",
+            placeholder="Example: What is Retrieval-Augmented Generation?",
         )
+
+        top_k = st.slider(
+            "Top K Results",
+            min_value=1,
+            max_value=10,
+            value=5,
+        )
+
+        if st.button("Search"):
+
+            with st.spinner("Searching..."):
+
+                results = retriever.retrieve(
+                    query=query,
+                    top_k=top_k,
+                )
+
+            if not results:
+
+                st.warning("No relevant chunks found.")
+
+            else:
+
+                st.success(
+                    f"Retrieved {len(results)} chunk(s)."
+                )
+
+                for i, result in enumerate(results, start=1):
+
+                    with st.expander(f"Result {i}"):
+
+                        st.write(
+                            f"**Chunk ID:** `{result['chunk_id']}`"
+                        )
+
+                        st.write(
+                            f"**Filename:** {result['filename']}"
+                        )
+
+                        st.write(
+                            f"**Page:** {result['page_number']}"
+                        )
+
+                        st.write(
+                            f"**Distance:** {result['distance']:.4f}"
+                        )
+
+                        st.write(
+                            f"**Character Range:** "
+                            f"{result['start_char']} → "
+                            f"{result['end_char']}"
+                        )
+
+                        st.code(result["text"])
+
+                st.divider()
+
+                st.subheader("📄 Combined Retrieval Context")
+
+                context = retriever.retrieve_context(
+                    query=query,
+                    top_k=top_k,
+                )
+
+                st.text_area(
+                    "Context",
+                    value=context,
+                    height=300,
+                )
 
     except DocumentIngestionError as e:
 
@@ -158,19 +227,17 @@ st.divider()
 
 st.info(
     """
-Current Phase: **Phase 6**
+### Current Progress
 
-Completed:
+✅ Phase 4 — Document Ingestion
 
-- ✅ Document Ingestion
-- ✅ Chunk Generation
-- ✅ Gemini Embeddings
-- ✅ ChromaDB Indexing
+✅ Phase 5 — Document Chunking
 
-Next:
+✅ Phase 6 — Gemini Embeddings & ChromaDB
 
-- 🔜 Question Answering (/ask)
-- 🔜 Citations
-- 🔜 Hallucination Guard
+✅ Phase 7 — Semantic Retrieval
+
+🔜 Next Phase:
+LLM-powered Question Answering with Citations (`/ask`)
 """
 )
