@@ -1,4 +1,4 @@
-# 🤖 POTENS AI/ML Assignment
+# 🤖 Document Q&A with Citations - Onkar Shahapurkar
 ### Intelligent Retrieval-Augmented Generation (RAG) System with Semantic Search, Multilingual Question Answering, Contradiction Detection, Confidence Scoring, and FastAPI Integration
 
 <p align="center">
@@ -415,8 +415,8 @@ Reranker (optional)
 # Clone Repository
 
 ``` bash
-git clone https://github.com/<username>/potens-ai-rag.git
-cd potens-ai-rag
+git clone https://github.com/Onkar-Shahapurkar/potens-intern-AI-ML-Onkar-Shahapurkar.git
+cd potens-intern-AI-ML-Onkar-Shahapurkar
 ```
 
 ------------------------------------------------------------------------
