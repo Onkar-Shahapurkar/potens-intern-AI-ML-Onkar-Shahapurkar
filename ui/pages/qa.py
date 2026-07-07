@@ -2,6 +2,7 @@
 ui/pages/qa.py
 
 Question Answering page using the FastAPI backend.
+Displays confidence metrics and reranking status.
 """
 
 from __future__ import annotations
@@ -39,6 +40,24 @@ def render_qa_page() -> None:
         )
         return
 
+    # --------------------------------------------------
+    # Pipeline Status
+    # --------------------------------------------------
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.success("✅ Semantic Retrieval")
+
+    with col2:
+        st.success("✅ Reranking Enabled")
+
+    st.caption(
+        "Pipeline: Embeddings → ChromaDB → Reranker → Gemini"
+    )
+
+    st.divider()
+
     question = st.text_area(
         "Ask a Question",
         placeholder=(
@@ -51,7 +70,7 @@ def render_qa_page() -> None:
     )
 
     top_k = st.slider(
-        "Retrieved Chunks",
+        "Final Top-K Chunks",
         min_value=1,
         max_value=10,
         value=5,
@@ -68,13 +87,12 @@ def render_qa_page() -> None:
             st.warning(
                 "Please enter a question."
             )
-
             return
 
         try:
 
             with st.spinner(
-                "Generating answer..."
+                "Searching documents and reranking..."
             ):
 
                 response = api.ask(
@@ -82,97 +100,85 @@ def render_qa_page() -> None:
                     top_k=top_k,
                 )
 
-            # ==========================================
+            # --------------------------------------------------
             # Answer
-            # ==========================================
+            # --------------------------------------------------
 
             st.divider()
 
             st.subheader("📝 Answer")
 
-            st.write(
-                response["answer"]
-            )
+            st.write(response["answer"])
 
-            # ==========================================
-            # Language & Confidence
-            # ==========================================
+            # --------------------------------------------------
+            # Confidence
+            # --------------------------------------------------
 
             st.divider()
 
-            col1, col2 = st.columns(2)
+            st.subheader("📊 Confidence")
+
+            col1, col2, col3 = st.columns(3)
 
             with col1:
-
                 st.metric(
                     "Language",
                     response["language"].upper(),
                 )
 
             with col2:
-
                 st.metric(
                     "Confidence",
                     f"{response['confidence']}%",
                 )
 
-            level = response[
-                "confidence_level"
-            ]
+            with col3:
+                st.metric(
+                    "Level",
+                    response["confidence_level"],
+                )
+
+            level = response["confidence_level"]
 
             if level == "High":
 
                 st.success(
-                    f"🟢 {level} Confidence"
+                    "🟢 High confidence"
                 )
 
             elif level == "Medium":
 
                 st.warning(
-                    f"🟡 {level} Confidence"
+                    "🟡 Medium confidence"
                 )
 
             else:
 
                 st.error(
-                    f"🔴 {level} Confidence"
+                    "🔴 Low confidence"
                 )
 
-            # ==========================================
-            # Human Review
-            # ==========================================
-
-            if response[
-                "human_review"
-            ]:
+            if response["human_review"]:
 
                 st.warning(
-                    response[
-                        "review_message"
-                    ]
+                    f"⚠️ {response['review_message']}"
                 )
 
             else:
 
                 st.info(
-                    response[
-                        "review_message"
-                    ]
+                    response["review_message"]
                 )
 
-            # ==========================================
-            # Confidence Metrics
-            # ==========================================
+            # --------------------------------------------------
+            # Metrics
+            # --------------------------------------------------
+
+            metrics = response["metrics"]
 
             st.divider()
 
-            st.subheader(
-                "📊 Confidence Metrics"
-            )
-
-            metrics = response[
-                "metrics"
-            ]
+            st.subheader("📈 Confidence Metrics")
 
             c1, c2, c3, c4 = st.columns(4)
 
@@ -196,19 +202,15 @@ def render_qa_page() -> None:
                 f"{metrics['chunks']}%",
             )
 
-            # ==========================================
+            # --------------------------------------------------
             # Citations
-            # ==========================================
+            # --------------------------------------------------
 
             st.divider()
 
-            st.subheader(
-                "📚 Citations"
-            )
+            st.subheader("📚 Citations")
 
-            citations = response[
-                "citations"
-            ]
+            citations = response["citations"]
 
             if not citations:
 
@@ -230,9 +232,7 @@ def render_qa_page() -> None:
                         )
 
                         st.info(
-                            citation[
-                                "snippet"
-                            ]
+                            citation["snippet"]
                         )
 
         except requests.HTTPError as exc:

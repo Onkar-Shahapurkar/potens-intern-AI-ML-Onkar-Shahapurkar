@@ -1,12 +1,7 @@
 """
 retrieval.py
 
-Semantic retrieval service.
-
-Responsibilities:
-- Multilingual semantic retrieval
-- Document-specific retrieval
-- Context generation for LLM
+Semantic retrieval with reranking support.
 """
 
 from __future__ import annotations
@@ -14,6 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from src.embeddings import EmbeddingService
+from src.reranker import Reranker
 from src.translation import TranslationService
 from src.vectordb import VectorDatabase
 
@@ -28,6 +24,7 @@ class Retriever:
         embedding_service: EmbeddingService | None = None,
         vector_database: VectorDatabase | None = None,
         translator: TranslationService | None = None,
+        reranker: Reranker | None = None,
     ):
 
         self.embedding_service = (
@@ -48,13 +45,16 @@ class Retriever:
             else TranslationService()
         )
 
+        self.reranker = reranker
+
     def retrieve(
         self,
         query: str,
         top_k: int = 5,
+        rerank: bool = True,
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve relevant chunks from all indexed documents.
+        Retrieve relevant chunks from all documents.
         """
 
         _, english_query = (
@@ -65,6 +65,7 @@ class Retriever:
             query=english_query,
             top_k=top_k,
             where=None,
+            rerank=rerank,
         )
 
     def retrieve_from_document(
@@ -72,9 +73,10 @@ class Retriever:
         query: str,
         document_id: str,
         top_k: int = 5,
+        rerank: bool = True,
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve relevant chunks from one document.
+        Retrieve chunks from a specific document.
         """
 
         _, english_query = (
@@ -87,6 +89,7 @@ class Retriever:
             where={
                 "document_id": document_id,
             },
+            rerank=rerank,
         )
 
     def retrieve_context(
@@ -94,9 +97,6 @@ class Retriever:
         query: str,
         top_k: int = 5,
     ) -> str:
-        """
-        Build context from all retrieved chunks.
-        """
 
         chunks = self.retrieve(
             query=query,
@@ -111,9 +111,6 @@ class Retriever:
         document_id: str,
         top_k: int = 5,
     ) -> str:
-        """
-        Build context from one document.
-        """
 
         chunks = self.retrieve_from_document(
             query=query,
@@ -127,9 +124,10 @@ class Retriever:
         self,
         query: str,
         top_k: int = 5,
+        initial_k: int = 10,
     ) -> Dict[str, Any]:
         """
-        Retrieve everything needed for answer generation.
+        Retrieve and rerank chunks for answer generation.
         """
 
         language, english_query = (
@@ -139,7 +137,9 @@ class Retriever:
         chunks = self._search(
             query=english_query,
             top_k=top_k,
+            initial_k=initial_k,
             where=None,
+            rerank=True,
         )
 
         return {
@@ -154,6 +154,8 @@ class Retriever:
         query: str,
         top_k: int,
         where: Dict[str, Any] | None,
+        rerank: bool = True,
+        initial_k: int | None = None,
     ) -> List[Dict[str, Any]]:
         """
         Internal semantic search.
@@ -166,20 +168,40 @@ class Retriever:
             query
         )
 
+        search_k = initial_k or top_k
+
         results = self.vector_database.similarity_search(
             query_embedding=query_embedding,
-            top_k=top_k,
+            top_k=search_k,
             where=where,
         )
 
-        return self._format_results(results)
+        chunks = self._format_results(results)
+
+        if (
+            rerank
+            and self.reranker is not None
+            and chunks
+        ):
+
+            chunks = self.reranker.rerank(
+                query=query,
+                chunks=chunks,
+                top_k=top_k,
+            )
+
+        else:
+
+            chunks = chunks[:top_k]
+
+        return chunks
 
     def _build_context(
         self,
         chunks: List[Dict[str, Any]],
     ) -> str:
         """
-        Convert retrieved chunks into LLM context.
+        Build LLM context.
         """
 
         if not chunks:
@@ -207,10 +229,10 @@ class Retriever:
         results: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """
-        Convert ChromaDB response into structured dictionaries.
+        Convert ChromaDB response into dictionaries.
         """
 
-        formatted: List[Dict[str, Any]] = []
+        formatted = []
 
         ids = results.get("ids", [[]])[0]
         documents = results.get("documents", [[]])[0]
