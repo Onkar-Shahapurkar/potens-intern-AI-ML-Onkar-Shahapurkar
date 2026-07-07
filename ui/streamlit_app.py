@@ -1,11 +1,9 @@
 """
 streamlit_app.py
 
-Phase 4:
-Document Ingestion Interface
+Phase 5:
+Document Ingestion + Chunking
 """
-
-from pathlib import Path
 
 import streamlit as st
 
@@ -13,6 +11,7 @@ from src.ingestion import (
     DocumentIngestor,
     DocumentIngestionError,
 )
+from src.chunking import DocumentChunker
 
 st.set_page_config(
     page_title="POTENS AI/ML Assignment",
@@ -20,12 +19,13 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("📄 Document Ingestion Pipeline")
+st.title("📄 RAG Document Processing")
+
 st.markdown(
     """
-Upload a document to test the ingestion pipeline.
+Upload a document to test the ingestion and chunking pipeline.
 
-**Supported Formats**
+### Supported Formats
 - PDF
 - DOCX
 - TXT
@@ -33,16 +33,20 @@ Upload a document to test the ingestion pipeline.
 )
 
 uploaded_file = st.file_uploader(
-    "Choose a document",
+    "Upload Document",
     type=["pdf", "docx", "txt"],
 )
 
 if uploaded_file is not None:
 
     ingestor = DocumentIngestor()
+    chunker = DocumentChunker()
 
     try:
 
+        # -----------------------------
+        # Document Ingestion
+        # -----------------------------
         document = ingestor.ingest(
             file=uploaded_file,
             filename=uploaded_file.name,
@@ -52,7 +56,7 @@ if uploaded_file is not None:
 
         metadata = document.metadata
 
-        st.subheader("Document Metadata")
+        st.header("📑 Document Metadata")
 
         col1, col2 = st.columns(2)
 
@@ -63,18 +67,45 @@ if uploaded_file is not None:
 
         with col2:
             st.write(f"**Filename:** {metadata.filename}")
-            st.write(f"**Type:** {metadata.file_type}")
+            st.write(f"**Document ID:** {metadata.document_id}")
             st.write(f"**Language:** {metadata.language}")
 
+        # -----------------------------
+        # Page Preview
+        # -----------------------------
         st.divider()
 
-        st.subheader("Extracted Pages")
+        st.header("📄 Extracted Pages")
 
         for page in document.pages:
 
             with st.expander(f"Page {page.page_number}"):
 
                 st.text(page.text)
+
+        # -----------------------------
+        # Chunk Generation
+        # -----------------------------
+        st.divider()
+
+        chunks = chunker.chunk_document(document)
+
+        st.header("🧩 Generated Chunks")
+
+        st.metric("Total Chunks", len(chunks))
+
+        for chunk in chunks:
+
+            with st.expander(f"Chunk {chunk.chunk_index}"):
+
+                st.write(f"**Chunk ID:** `{chunk.chunk_id}`")
+                st.write(f"**Page:** {chunk.page_number}")
+                st.write(
+                    f"**Characters:** "
+                    f"{chunk.start_char} → {chunk.end_char}"
+                )
+
+                st.code(chunk.text)
 
     except DocumentIngestionError as e:
 
@@ -87,5 +118,5 @@ if uploaded_file is not None:
 st.divider()
 
 st.caption(
-    "Phase 4 • Document Ingestion • POTENS Internship 2026"
+    "Phase 5 • Document Ingestion + Chunking • POTENS Internship 2026"
 )
