@@ -7,7 +7,7 @@ for the POTENS AI/ML RAG API.
 
 from __future__ import annotations
 
-from typing import List
+from typing import Dict, List
 
 from pydantic import BaseModel, Field
 
@@ -39,14 +39,14 @@ class AskRequest(BaseModel):
     question: str = Field(
         ...,
         min_length=1,
-        description="Question to ask."
+        description="Question to ask.",
     )
 
     top_k: int = Field(
         default=5,
         ge=1,
         le=10,
-        description="Number of retrieved chunks."
+        description="Number of retrieved chunks.",
     )
 
 
@@ -60,6 +60,16 @@ class AskResponse(BaseModel):
     citations: List[Citation]
 
     language: str
+
+    confidence: int
+
+    confidence_level: str
+
+    human_review: bool
+
+    review_message: str
+
+    metrics: Dict[str, int]
 
 
 # ==========================================================

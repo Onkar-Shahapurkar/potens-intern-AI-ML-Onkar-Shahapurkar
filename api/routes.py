@@ -12,7 +12,6 @@ from api.dependencies import (
     get_contradiction_analyzer,
     get_llm_service,
     get_retriever,
-    get_translation_service,
 )
 from api.schemas import (
     AskRequest,
@@ -25,7 +24,6 @@ from src.citations import CitationFormatter
 from src.contradiction import ContradictionAnalyzer
 from src.llm import LLMService
 from src.retrieval import Retriever
-from src.translation import TranslationService
 
 router = APIRouter()
 
@@ -39,7 +37,6 @@ def ask(
     request: AskRequest,
     retriever: Retriever = Depends(get_retriever),
     llm: LLMService = Depends(get_llm_service),
-    translator: TranslationService = Depends(get_translation_service),
 ):
     """
     Answer a question using the indexed documents.
@@ -58,19 +55,26 @@ def ask(
         top_k=request.top_k,
     )
 
-    answer = llm.generate_answer(
-        question=question,
-        context=retrieval["context"],
-    )
-
     citations = CitationFormatter.format_citations(
         retrieval["chunks"]
     )
 
+    result = llm.generate_answer_with_confidence(
+        question=question,
+        context=retrieval["context"],
+        retrieved_chunks=retrieval["chunks"],
+        citations=citations,
+    )
+
     return AskResponse(
-        answer=answer,
+        answer=result["answer"],
         citations=citations,
         language=retrieval["language"],
+        confidence=result["confidence"],
+        confidence_level=result["confidence_level"],
+        human_review=result["human_review"],
+        review_message=result["review_message"],
+        metrics=result["metrics"],
     )
 
 
@@ -90,6 +94,7 @@ def contradict(
     """
 
     if not request.topic.strip():
+
         raise HTTPException(
             status_code=400,
             detail="Topic cannot be empty.",

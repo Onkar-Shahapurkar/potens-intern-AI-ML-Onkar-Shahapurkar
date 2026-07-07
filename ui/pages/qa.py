@@ -42,7 +42,7 @@ def render_qa_page() -> None:
     question = st.text_area(
         "Ask a Question",
         placeholder=(
-            "Example:\n"
+            "Examples:\n"
             "• What is Retrieval-Augmented Generation?\n"
             "• रिट्रिव्हल ऑगमेंटेड जनरेशन म्हणजे काय?\n"
             "• रिट्रीवल ऑगमेंटेड जनरेशन क्या है?"
@@ -82,11 +82,21 @@ def render_qa_page() -> None:
                     top_k=top_k,
                 )
 
+            # ==========================================
+            # Answer
+            # ==========================================
+
             st.divider()
 
             st.subheader("📝 Answer")
 
-            st.write(response["answer"])
+            st.write(
+                response["answer"]
+            )
+
+            # ==========================================
+            # Language & Confidence
+            # ==========================================
 
             st.divider()
 
@@ -102,23 +112,113 @@ def render_qa_page() -> None:
             with col2:
 
                 st.metric(
-                    "Citations",
-                    len(response["citations"]),
+                    "Confidence",
+                    f"{response['confidence']}%",
                 )
+
+            level = response[
+                "confidence_level"
+            ]
+
+            if level == "High":
+
+                st.success(
+                    f"🟢 {level} Confidence"
+                )
+
+            elif level == "Medium":
+
+                st.warning(
+                    f"🟡 {level} Confidence"
+                )
+
+            else:
+
+                st.error(
+                    f"🔴 {level} Confidence"
+                )
+
+            # ==========================================
+            # Human Review
+            # ==========================================
+
+            if response[
+                "human_review"
+            ]:
+
+                st.warning(
+                    response[
+                        "review_message"
+                    ]
+                )
+
+            else:
+
+                st.info(
+                    response[
+                        "review_message"
+                    ]
+                )
+
+            # ==========================================
+            # Confidence Metrics
+            # ==========================================
 
             st.divider()
 
-            st.subheader("📚 Citations")
+            st.subheader(
+                "📊 Confidence Metrics"
+            )
 
-            if not response["citations"]:
+            metrics = response[
+                "metrics"
+            ]
 
-                st.info(
+            c1, c2, c3, c4 = st.columns(4)
+
+            c1.metric(
+                "Retrieval",
+                f"{metrics['retrieval']}%",
+            )
+
+            c2.metric(
+                "Coverage",
+                f"{metrics['coverage']}%",
+            )
+
+            c3.metric(
+                "Citations",
+                f"{metrics['citations']}%",
+            )
+
+            c4.metric(
+                "Chunks",
+                f"{metrics['chunks']}%",
+            )
+
+            # ==========================================
+            # Citations
+            # ==========================================
+
+            st.divider()
+
+            st.subheader(
+                "📚 Citations"
+            )
+
+            citations = response[
+                "citations"
+            ]
+
+            if not citations:
+
+                st.warning(
                     "No citations available."
                 )
 
             else:
 
-                for citation in response["citations"]:
+                for citation in citations:
 
                     with st.expander(
                         f"{citation['filename']} | "
@@ -130,7 +230,9 @@ def render_qa_page() -> None:
                         )
 
                         st.info(
-                            citation["snippet"]
+                            citation[
+                                "snippet"
+                            ]
                         )
 
         except requests.HTTPError as exc:
