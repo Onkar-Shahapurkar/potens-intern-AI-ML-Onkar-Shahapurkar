@@ -22,7 +22,9 @@ def test_root():
 
     data = response.json()
 
-    assert data["message"] == "POTENS AI/ML RAG API"
+    assert data["application"] == "POTENS AI/ML RAG API"
+
+    assert data["status"] == "running"
 
 
 def test_health():

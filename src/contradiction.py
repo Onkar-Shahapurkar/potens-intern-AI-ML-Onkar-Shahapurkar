@@ -66,7 +66,6 @@ class ContradictionAnalyzer:
         )
 
         if not context_a or not context_b:
-
             return {
                 "conflict": False,
                 "reason": (
@@ -74,6 +73,8 @@ class ContradictionAnalyzer:
                     "the selected documents."
                 ),
                 "evidence": [],
+                "document_a": document_a_id,
+                "document_b": document_b_id,
             }
 
         prompt = build_contradiction_prompt(
@@ -98,6 +99,8 @@ class ContradictionAnalyzer:
                     "The model returned an invalid response."
                 ),
                 "evidence": [],
+                "document_a": document_a_id,
+                "document_b": document_b_id,
             }
 
         result["document_a"] = document_a_id
