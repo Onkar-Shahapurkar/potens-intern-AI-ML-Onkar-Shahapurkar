@@ -1,25 +1,15 @@
 """
 ui/pages/qa.py
 
-Question Answering page.
-
-Features
---------
-- Multilingual query support
-- Semantic retrieval
-- RAG answer generation
-- Source citations
+Question Answering page using the FastAPI backend.
 """
 
 from __future__ import annotations
 
+import requests
 import streamlit as st
 
-from src.citations import CitationFormatter
-from ui.services import (
-    get_llm,
-    get_retriever,
-)
+from ui.api_client import get_api_client
 
 
 def render_qa_page() -> None:
@@ -38,11 +28,19 @@ def render_qa_page() -> None:
         )
         return
 
-    retriever = get_retriever()
-    llm = get_llm()
+    api = get_api_client()
+
+    if not api.is_available():
+
+        st.error(
+            "FastAPI backend is not running.\n\n"
+            "Start it using:\n"
+            "`uvicorn api.app:app --reload`"
+        )
+        return
 
     question = st.text_area(
-        "Ask a question",
+        "Ask a Question",
         placeholder=(
             "Example:\n"
             "• What is Retrieval-Augmented Generation?\n"
@@ -73,116 +71,83 @@ def render_qa_page() -> None:
 
             return
 
-        with st.spinner(
-            "Searching documents..."
-        ):
+        try:
 
-            retrieval = retriever.retrieve_for_generation(
-                query=question,
-                top_k=top_k,
-            )
+            with st.spinner(
+                "Generating answer..."
+            ):
 
-        context = retrieval["context"]
+                response = api.ask(
+                    question=question,
+                    top_k=top_k,
+                )
 
-        retrieved_chunks = retrieval["chunks"]
+            st.divider()
 
-        detected_language = retrieval["language"]
+            st.subheader("📝 Answer")
 
-        translated_query = retrieval[
-            "translated_query"
-        ]
+            st.write(response["answer"])
 
-        with st.spinner(
-            "Generating answer..."
-        ):
+            st.divider()
 
-            answer = llm.generate_answer(
-                question=question,
-                context=context,
-            )
+            col1, col2 = st.columns(2)
 
-        citations = CitationFormatter.format_citations(
-            retrieved_chunks
-        )
+            with col1:
 
-        # ==========================================
-        # Language
-        # ==========================================
+                st.metric(
+                    "Language",
+                    response["language"].upper(),
+                )
 
-        st.divider()
+            with col2:
 
-        st.subheader("🌍 Language")
+                st.metric(
+                    "Citations",
+                    len(response["citations"]),
+                )
 
-        col1, col2 = st.columns(2)
+            st.divider()
 
-        with col1:
+            st.subheader("📚 Citations")
 
-            st.metric(
-                "Detected",
-                detected_language.upper(),
-            )
+            if not response["citations"]:
 
-        with col2:
+                st.info(
+                    "No citations available."
+                )
 
-            st.metric(
-                "Retrieved Chunks",
-                len(retrieved_chunks),
-            )
+            else:
 
-        if detected_language != "en":
+                for citation in response["citations"]:
 
-            st.caption(
-                "Translated query used for retrieval:"
-            )
+                    with st.expander(
+                        f"{citation['filename']} | "
+                        f"Page {citation['page_number']}"
+                    ):
 
-            st.code(translated_query)
+                        st.write(
+                            f"**Chunk ID:** `{citation['chunk_id']}`"
+                        )
 
-        # ==========================================
-        # Answer
-        # ==========================================
+                        st.info(
+                            citation["snippet"]
+                        )
 
-        st.divider()
+        except requests.HTTPError as exc:
 
-        st.subheader("📝 Answer")
+            try:
 
-        st.write(answer)
+                detail = exc.response.json().get(
+                    "detail",
+                    str(exc),
+                )
 
-        # ==========================================
-        # Citations
-        # ==========================================
+            except Exception:
 
-        st.divider()
+                detail = str(exc)
 
-        st.subheader("📚 Sources")
+            st.error(detail)
 
-        if not citations:
+        except Exception as exc:
 
-            st.warning(
-                "No citations available."
-            )
-
-        else:
-
-            for citation in citations:
-
-                with st.expander(
-                    f"{citation['filename']} • Page {citation['page_number']}"
-                ):
-
-                    st.write(
-                        f"**Chunk ID:** `{citation['chunk_id']}`"
-                    )
-
-                    st.info(
-                        citation["snippet"]
-                    )
-
-        # ==========================================
-        # Retrieved Context
-        # ==========================================
-
-        with st.expander(
-            "🔍 Retrieved Context"
-        ):
-
-            st.text(context)
+            st.exception(exc)

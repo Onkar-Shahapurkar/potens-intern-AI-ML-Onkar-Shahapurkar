@@ -1,16 +1,25 @@
 """
-routes.py
+api/routes.py
 
-API routes for the POTENS AI/ML RAG system.
+FastAPI routes for the POTENS AI/ML RAG system.
 """
 
-from fastapi import APIRouter, HTTPException
+from __future__ import annotations
 
+from fastapi import APIRouter, Depends, HTTPException
+
+from api.dependencies import (
+    get_contradiction_analyzer,
+    get_llm_service,
+    get_retriever,
+    get_translation_service,
+)
 from api.schemas import (
     AskRequest,
     AskResponse,
     ContradictRequest,
     ContradictResponse,
+    HealthResponse,
 )
 from src.citations import CitationFormatter
 from src.contradiction import ContradictionAnalyzer
@@ -20,15 +29,6 @@ from src.translation import TranslationService
 
 router = APIRouter()
 
-from fastapi import Depends
-
-from api.dependencies import (
-    get_contradiction_analyzer,
-    get_llm_service,
-    get_retriever,
-    get_translation_service,
-)
-
 
 @router.post(
     "/ask",
@@ -37,24 +37,29 @@ from api.dependencies import (
 )
 def ask(
     request: AskRequest,
+    retriever: Retriever = Depends(get_retriever),
+    llm: LLMService = Depends(get_llm_service),
+    translator: TranslationService = Depends(get_translation_service),
 ):
     """
     Answer a question using the indexed documents.
     """
 
-    if not request.question.strip():
+    question = request.question.strip()
+
+    if not question:
         raise HTTPException(
             status_code=400,
             detail="Question cannot be empty.",
         )
 
     retrieval = retriever.retrieve_for_generation(
-        query=request.question,
+        query=question,
         top_k=request.top_k,
     )
 
     answer = llm.generate_answer(
-        question=request.question,
+        question=question,
         context=retrieval["context"],
     )
 
@@ -62,14 +67,10 @@ def ask(
         retrieval["chunks"]
     )
 
-    language = translator.detect_language(
-        request.question
-    )
-
     return AskResponse(
         answer=answer,
         citations=citations,
-        language=language,
+        language=retrieval["language"],
     )
 
 
@@ -80,12 +81,21 @@ def ask(
 )
 def contradict(
     request: ContradictRequest,
+    analyzer: ContradictionAnalyzer = Depends(
+        get_contradiction_analyzer
+    ),
 ):
     """
     Compare two indexed documents.
     """
 
-    result = contradiction.analyze(
+    if not request.topic.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Topic cannot be empty.",
+        )
+
+    result = analyzer.analyze(
         topic=request.topic,
         document_a_id=request.document_a_id,
         document_b_id=request.document_b_id,
@@ -97,13 +107,14 @@ def contradict(
 
 @router.get(
     "/health",
+    response_model=HealthResponse,
     tags=["System"],
 )
 def health():
     """
-    Health check.
+    Health check endpoint.
     """
 
-    return {
-        "status": "ok",
-    }
+    return HealthResponse(
+        status="ok",
+    )
