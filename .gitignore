@@ -1,1 +1,45 @@
 .idea/
+
+# Virtual Environment
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+
+# ChromaDB
+chroma_db/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Build
+dist/
+build/
+
+# Coverage
+.coverage
+htmlcov/
